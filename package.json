@@ -1,0 +1,15 @@
+{
+    "name": "dataschema",
+    "description": "Parsing and packing structured binary data formats",
+    "version": "0.1.0",
+    "main": "dataschema.js",
+    "repository" : {
+        "type" : "git", 
+        "url" : "https://github.com/jseidelin/dataschema.git"
+    },
+    "dependencies": {
+        "int64-native": "*",
+        "bufferext": "git+ssh://git@github.com:jseidelin/bufferext.git"
+    }
+
+}
