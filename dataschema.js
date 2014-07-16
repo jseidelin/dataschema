@@ -530,5 +530,6 @@ function pack(fields, object, data, offset, referenceData) {
     };
 }
 
+exports.sizeOf = calculateDataLength;
 exports.parse = parse;
 exports.pack = pack;
