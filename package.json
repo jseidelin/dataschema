@@ -1,7 +1,7 @@
 {
     "name": "dataschema",
     "description": "Parsing and packing structured binary data formats",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "main": "dataschema.js",
     "repository" : {
         "type" : "git", 

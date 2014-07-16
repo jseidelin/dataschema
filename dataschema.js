@@ -119,6 +119,15 @@ function parse(fields, data, offset, referenceData) {
                 };
                 offset += 4;
                 break;
+            case "argb":
+                result[field.name] = {
+                    a: data.readInt8(offset),
+                    r: data.readInt8(offset+1),
+                    g: data.readInt8(offset+2),
+                    b: data.readInt8(offset+3)
+                };
+                offset += 4;
+                break;
             case "int64":
             case "uint64":
                 var str = "0x";
@@ -280,6 +289,7 @@ function calculateDataLength(fields, object, referenceData) {
             case "int32":
             case "float":
             case "rgba":
+            case "argb":
                 length += 4;
                 break;
             case "floatvector2":
@@ -437,6 +447,13 @@ function pack(fields, object, data, offset, referenceData) {
                 data.writeInt8(value.g, offset+1);
                 data.writeInt8(value.b, offset+2);
                 data.writeInt8(value.a, offset+3);
+                offset += 4;
+                break;
+            case "argb":
+                data.writeInt8(value.a, offset);
+                data.writeInt8(value.r, offset+1);
+                data.writeInt8(value.g, offset+2);
+                data.writeInt8(value.b, offset+3);
                 offset += 4;
                 break;
             case "bitflags":
