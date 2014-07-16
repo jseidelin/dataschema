@@ -1,40 +1,50 @@
-var Int64 = require("int64-native");
 require("bufferext");
 
-function parse(schema, data, offset) {
-    offset = offset || 0;
+function parse(fields, data, offset, referenceData) {
     var startOffset = offset,
         result = {},
-        fields = schema.fields || [],
         field, i, j, numElements, elements, element, elementSchema,
         bytes, string, length, value, flags, flag;
 
+    fields = fields || [];
     for (i=0;i<fields.length;i++) {
         field = fields[i];
+        if (field.name in result) {
+            console.warn("DataSchema::parse(): Duplicate field name in schema: " + field.name);
+        }
         switch (field.type) {
+            case "schema":
+                element = parse(field.fields, data, offset, referenceData);
+                offset += element.length;
+                result[field.name] = element.result;
+                break;
             case "array":
+            case "array8":
                 elements = [];
                 if ("length" in field) {
                     numElements = field.length;
                 } else {
-                    numElements = data.readUInt32LE(offset);
-                    offset += 4;
+                    if (field.type == "array") {
+                        numElements = data.readUInt32LE(offset);
+                        offset += 4;
+                    } else if (field.type == "array8") {
+                        numElements = data.readUInt8(offset);
+                        offset += 1;
+                    }
                 }
                 if ("debuglength" in field) {
                     numElements = field.debuglength;
                 }
-                if (field.elementSchema) {
+                if (field.fields) {
                     for (j=0;j<numElements;j++) {
-                        element = parse(field.elementSchema, data, offset);
+                        element = parse(field.fields, data, offset, referenceData);
                         offset += element.length;
                         elements.push(element.result);
                     }
                 } else if (field.elementType) {
-                    elementSchema = {
-                        fields: [{name: "element", type: field.elementType}]
-                    };
+                    elementSchema = [{name: "element", type: field.elementType}];
                     for (j=0;j<numElements;j++) {
-                        element = parse(elementSchema, data, offset);
+                        element = parse(elementSchema, data, offset, referenceData);
                         offset += element.length;
                         elements.push(element.result.element);
                     }
@@ -60,8 +70,8 @@ function parse(schema, data, offset) {
             case "byteswithlength":
                 length = data.readUInt32LE(offset);
                 offset += 4;
-                if (field.schema) {
-                    element = parse(field.schema, data, offset);
+                if (field.fields) {
+                    element = parse(field.fields, data, offset, referenceData);
                     if (element) {
                         result[field.name] = element.result;
                     }
@@ -100,23 +110,38 @@ function parse(schema, data, offset) {
                 result[field.name] = data.readInt8(offset);
                 offset += 1;
                 break;
+            case "int64":
             case "uint64":
-                var int64 = new Int64(data.readUInt32LE(offset), data.readUInt32LE(offset+4));
-                result[field.name] = int64.toString();
+                var str = "0x";
+                for (var j=7;j>=0;j--) {
+                    str += ("0" + data.readUInt8(offset+j).toString(16)).substr(-2);
+                }
+                result[field.name] = str;
                 offset += 8;
                 break;
             case "variabletype8":
-                var vtypeidx = data.readUInt8(offset);
+                var vtypeidx = data.readUInt8(offset),
+                    vtype = field.types[vtypeidx],
+                    variableSchema;
                 offset += 1;
-                var variableSchema = {
-                        fields: [{name: "element", type: field.types[vtypeidx]}]
-                };
-                var variable = parse(variableSchema, data, offset);
-                offset += variable.length;
-                result[field.name] = {
-                    type: vtypeidx,
-                    value: variable.result.element
-                };
+                if (vtype) {
+                    if (Array.isArray(vtype)) {
+                        var variable = parse(vtype, data, offset, referenceData);
+                        offset += variable.length;
+                        result[field.name] = {
+                            type: vtypeidx,
+                            value: variable.result
+                        };
+                    } else {
+                        var variableSchema = [{name: "element", type: vtype}];
+                        var variable = parse(variableSchema, data, offset, referenceData);
+                        offset += variable.length;
+                        result[field.name] = {
+                            type: vtypeidx,
+                            value: variable.result.element
+                        };
+                    }
+                }
                 break;
             case "bitflags":
                 value = data.readUInt8(offset);
@@ -131,6 +156,10 @@ function parse(schema, data, offset) {
             case "float":
                 result[field.name] = data.readFloatLE(offset);
                 offset += 4;
+                break;
+            case "double":
+                result[field.name] = data.readDoubleLE(offset);
+                offset += 8;
                 break;
             case "floatvector2":
                 result[field.name] = [
@@ -165,6 +194,11 @@ function parse(schema, data, offset) {
                 result[field.name] = string;
                 offset += 4 + string.length;
                 break;
+            case "custom":
+                var tmp = field.parser(data, offset, referenceData);
+                result[field.name] = tmp.value;
+                offset += tmp.length;
+                break;
         }
         //console.log(field.name, String(result[field.name]).substring(0,50));
     }
@@ -174,10 +208,10 @@ function parse(schema, data, offset) {
     };
 }
 
-function calculateDataLength(schema, object) {
+function calculateDataLength(fields, object, referenceData) {
     var length = 0,
-        fields = schema.fields || [],
         field, i, j, elements;
+    fields = fields || [];
     for (i=0;i<fields.length;i++) {
         field = fields[i];
         if (!(field.name in object)) {
@@ -190,19 +224,25 @@ function calculateDataLength(schema, object) {
             value = object[field.name];
         }
         switch (field.type) {
+            case "schema":
+                length += calculateDataLength(field.fields, value, referenceData);
+                break;
             case "array":
-                length += 4;
+            case "array8":
+                if (field.type == "array") {
+                    length += 4;
+                } else {
+                    length += 1;
+                }
                 elements = object[field.name];
-                if (field.elementSchema) {
+                if (field.fields) {
                     for (j=0;j<elements.length;j++) {
-                        length += calculateDataLength(field.elementSchema, elements[j]);
+                        length += calculateDataLength(field.fields, elements[j], referenceData);
                     }
                 } else if (field.elementType) {
-                    elementSchema = {
-                        fields: [{name: "element", type: field.elementType}]
-                    };
+                    elementSchema = [{name: "element", type: field.elementType}];
                     for (j=0;j<elements.length;j++) {
-                        length += calculateDataLength(elementSchema, {element: elements[j]});
+                        length += calculateDataLength(elementSchema, {element: elements[j]}, referenceData);
                     }
                 }
                 break;
@@ -211,13 +251,15 @@ function calculateDataLength(schema, object) {
                 break;
             case "byteswithlength":
                 length += 4;
-                if (field.schema) {
-                    length += calculateDataLength(field.schema, value);
+                if (field.fields) {
+                    length += calculateDataLength(field.fields, value, referenceData);
                 } else {
                     length += value.length;
                 }
                 break;
+            case "int64":
             case "uint64":
+            case "double":
                 length += 8;
                 break;
             case "uint32":
@@ -249,21 +291,28 @@ function calculateDataLength(schema, object) {
                 break;
             case "variabletype8":
                 length += 1;
-                var variableSchema = {
-                    fields: [{name: "element", type: field.types[value.type]}]
-                };
-                length += calculateDataLength(variableSchema, {element: value.value});
+                var vtype = field.types[value.type];
+                if (Array.isArray(vtype)) {
+                    length += calculateDataLength(vtype, value.value, referenceData);
+                } else {
+                    var variableSchema = [{name: "element", type: vtype}];                    
+                    length += calculateDataLength(variableSchema, {element: value.value}, referenceData);
+                }
+                break;
+            case "custom":
+                var tmp = field.packer(value, referenceData);
+                length += tmp.length;
                 break;
         }
     }
     return length;
 }
 
-function pack(schema, object, data, offset) {
-    var fields, dataLength, field, value,
+function pack(fields, object, data, offset, referenceData) {
+    var dataLength, field, value,
         i, j, result, startOffset, elementSchema, flag, flagValue;
 
-    if (!schema.fields) {
+    if (!fields) {
         return {
             data: new Buffer(0),
             length: 0
@@ -271,13 +320,11 @@ function pack(schema, object, data, offset) {
     }
 
     if (!data) {
-        dataLength = calculateDataLength(schema, object);
+        dataLength = calculateDataLength(fields, object, referenceData);
         data = new Buffer(dataLength);
     }
     offset = offset || 0;
     startOffset = offset;
-
-    fields = schema.fields;
 
     for (i=0;i<fields.length;i++) {
         field = fields[i];
@@ -291,20 +338,27 @@ function pack(schema, object, data, offset) {
             value = object[field.name];
         }
         switch (field.type) {
+            case "schema":
+                offset += pack(field.fields, value, data, offset, referenceData).length;
+                break;
             case "array":
-                data.writeUInt32LE(value.length, offset);
-                offset += 4;
-                if (field.elementSchema) {
+            case "array8":
+                if (field.type == "array") {
+                    data.writeUInt32LE(value.length, offset);
+                    offset += 4;
+                } else {
+                    data.writeUInt8(value.length, offset);
+                    offset += 1;
+                }
+                if (field.fields) {
                     for (j=0;j<value.length;j++) {
-                        result = pack(field.elementSchema, value[j], data, offset);
+                        result = pack(field.fields, value[j], data, offset, referenceData);
                         offset += result.length;
                     }
                 } else if (field.elementType) {
-                    elementSchema = {
-                        fields: [{name: "element", type: field.elementType}]
-                    };
+                    elementSchema = [{name: "element", type: field.elementType}];
                     for (j=0;j<value.length;j++) {
-                        result = pack(elementSchema, {element: value[j]}, data, offset);
+                        result = pack(elementSchema, {element: value[j]}, data, offset, referenceData);
                         offset += result.length;
                     }
                 } else {
@@ -319,8 +373,8 @@ function pack(schema, object, data, offset) {
                 offset += field.length;
                 break;
             case "byteswithlength":
-                if (field.schema) {
-                    value = pack(field.schema, value).data;
+                if (field.fields) {
+                    value = pack(field.fields, value, null, null, referenceData).data;
                 }
                 if (!Buffer.isBuffer(value)) {
                     value = new Buffer(value);
@@ -331,9 +385,9 @@ function pack(schema, object, data, offset) {
                 offset += value.length;
                 break;
             case "uint64":
-                var int64 = new Int64(value);
-                data.writeUInt32LE(int64.high32(), offset);
-                data.writeUInt32LE(int64.low32(), offset + 4);
+                for (var j=0;j<8;j++) {
+                    data.writeUInt8(parseInt(value.substr(2 + (7 - j) * 2, 2), 16), offset + j);
+                }
                 offset += 8;
                 break;
             case "uint32":
@@ -375,6 +429,10 @@ function pack(schema, object, data, offset) {
                 data.writeFloatLE(value, offset);
                 offset += 4;
                 break;
+            case "double":
+                data.writeDoubleLE(value, offset);
+                offset += 8;
+                break;
             case "floatvector2":
                 data.writeFloatLE(value[0], offset);
                 data.writeFloatLE(value[1], offset + 4);
@@ -404,11 +462,19 @@ function pack(schema, object, data, offset) {
             case "variabletype8":
                 data.writeUInt8(value.type, offset);
                 offset++;
-                var variableSchema = {
-                    fields: [{name: "element", type: field.types[value.type]}]
-                };
-                result = pack(variableSchema, {element: value.value}, data, offset);
+                var vtype = field.types[value.type];
+                if (Array.isArray(vtype)) {
+                    result = pack(vtype, value.value, data, offset, referenceData);
+                } else {
+                    var variableSchema = [{name: "element", type: vtype}];
+                    result = pack(variableSchema, {element: value.value}, data, offset, referenceData);
+                }
                 offset += result.length;
+                break;
+            case "custom":
+                var customData = field.packer(value, referenceData);
+                customData.copy(data, offset);
+                offset += customData.length;
                 break;
         }
     }
