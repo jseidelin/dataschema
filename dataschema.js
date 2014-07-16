@@ -194,6 +194,11 @@ function parse(fields, data, offset, referenceData) {
                 result[field.name] = string;
                 offset += 4 + string.length;
                 break;
+            case "nullstring":
+                string = data.readNullTerminatedString(offset);
+                result[field.name] = string;
+                offset += 1 + string.length;
+                break;
             case "custom":
                 var tmp = field.parser(data, offset, referenceData);
                 result[field.name] = tmp.value;
@@ -288,6 +293,9 @@ function calculateDataLength(fields, object, referenceData) {
                 break;
             case "string":
                 length += 4 + value.length;
+                break;
+            case "nullstring":
+                length += 1 + value.length;
                 break;
             case "variabletype8":
                 length += 1;
@@ -458,6 +466,10 @@ function pack(fields, object, data, offset, referenceData) {
             case "string":
                 data.writePrefixedStringLE(value, offset);
                 offset += 4 + value.length;
+                break;
+            case "nullstring":
+                data.writeNullTerminatedString(value, offset);
+                offset += 1 + value.length;
                 break;
             case "variabletype8":
                 data.writeUInt8(value.type, offset);
