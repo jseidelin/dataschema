@@ -8,7 +8,6 @@
         "url" : "https://github.com/jseidelin/dataschema.git"
     },
     "dependencies": {
-        "int64-native": "*",
         "bufferext": "git+ssh://git@github.com:jseidelin/bufferext.git"
     }
 
