@@ -212,6 +212,11 @@ function parse(fields, data, offset, referenceData) {
                 result[field.name] = string;
                 offset += 4 + string.length;
                 break;
+            case "fixedlengthstring":
+                string = data.toString("utf8", offset, offset+field.length);
+                result[field.name] = string;
+                offset += string.length;
+                break;
             case "nullstring":
                 string = data.readNullTerminatedString(offset);
                 result[field.name] = string;
@@ -313,6 +318,9 @@ function calculateDataLength(fields, object, referenceData) {
                 break;
             case "string":
                 length += 4 + value.length;
+                break;
+            case "fixedlengthstring":
+                length += value.length;
                 break;
             case "nullstring":
                 length += 1 + value.length;
@@ -500,6 +508,10 @@ function pack(fields, object, data, offset, referenceData) {
             case "string":
                 data.writePrefixedStringLE(value, offset);
                 offset += 4 + value.length;
+                break;
+            case "fixedlengthstring":
+                data.write(value, offset, value.length, "utf8");
+                offset += value.length;
                 break;
             case "nullstring":
                 data.writeNullTerminatedString(value, offset);
