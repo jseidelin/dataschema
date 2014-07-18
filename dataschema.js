@@ -77,11 +77,11 @@ function parse(fields, data, offset, referenceData) {
                     }
                 } else {
                     bytes = data.readBytes(offset, length);
-                    if (bytes.length > 20) {
-                        bytes.toJSON = function() {
-                            return "[" + this.length + " " + "bytes]";
-                        };
-                    }
+                    // if (bytes.length > 20) {
+                    //     bytes.toJSON = function() {
+                    //         return "[" + this.length + " " + "bytes]";
+                    //     };
+                    // }
                     result[field.name] = bytes;
                 }
                 offset += length;
