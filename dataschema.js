@@ -70,21 +70,18 @@ function parse(fields, data, offset, referenceData) {
             case "byteswithlength":
                 length = data.readUInt32LE(offset);
                 offset += 4;
-                if (field.fields) {
-                    element = parse(field.fields, data, offset, referenceData);
-                    if (element) {
-                        result[field.name] = element.result;
+                if (length > 0) {
+                    if (field.fields) {
+                        element = parse(field.fields, data, offset, referenceData);
+                        if (element) {
+                            result[field.name] = element.result;
+                        }
+                    } else {
+                        bytes = data.readBytes(offset, length);
+                        result[field.name] = bytes;
                     }
-                } else {
-                    bytes = data.readBytes(offset, length);
-                    // if (bytes.length > 20) {
-                    //     bytes.toJSON = function() {
-                    //         return "[" + this.length + " " + "bytes]";
-                    //     };
-                    // }
-                    result[field.name] = bytes;
+                    offset += length;
                 }
-                offset += length;
                 break;
             case "uint32":
                 result[field.name] = data.readUInt32LE(offset);
@@ -279,10 +276,12 @@ function calculateDataLength(fields, object, referenceData) {
                 break;
             case "byteswithlength":
                 length += 4;
-                if (field.fields) {
-                    length += calculateDataLength(field.fields, value, referenceData);
-                } else {
-                    length += value.length;
+                if (value) {
+                    if (field.fields) {
+                        length += calculateDataLength(field.fields, value, referenceData);
+                    } else {
+                        length += value.length;
+                    }
                 }
                 break;
             case "int64":
@@ -409,16 +408,21 @@ function pack(fields, object, data, offset, referenceData) {
                 offset += field.length;
                 break;
             case "byteswithlength":
-                if (field.fields) {
-                    value = pack(field.fields, value, null, null, referenceData).data;
+                if (value) {
+                    if (field.fields) {
+                        value = pack(field.fields, value, null, null, referenceData).data;
+                    }
+                    if (!Buffer.isBuffer(value)) {
+                        value = new Buffer(value);
+                    }
+                    data.writeUInt32LE(value.length, offset);
+                    offset += 4;
+                    data.writeBytes(value, offset);
+                    offset += value.length;
+                } else {
+                    data.writeUInt32LE(0, offset);
+                    offset += 4;
                 }
-                if (!Buffer.isBuffer(value)) {
-                    value = new Buffer(value);
-                }
-                data.writeUInt32LE(value.length, offset);
-                offset += 4;
-                data.writeBytes(value, offset);
-                offset += value.length;
                 break;
             case "uint64":
                 for (var j=0;j<8;j++) {
