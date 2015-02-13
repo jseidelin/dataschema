@@ -1,5 +1,8 @@
 require("bufferext");
 
+var DEBUG = false,
+    DEBUGINDENT = 0;
+
 function parse(fields, data, offset, referenceData) {
     var startOffset = offset,
         result = {},
@@ -7,8 +10,14 @@ function parse(fields, data, offset, referenceData) {
         bytes, string, length, value, flags, flag;
 
     fields = fields || [];
+    if (DEBUG) {
+        DEBUGINDENT++;
+    }
     for (i=0;i<fields.length;i++) {
         field = fields[i];
+        if (DEBUG) {
+            console.log(new Array(DEBUGINDENT).join("\t"), field.name, offset);
+        }
         if (field.name in result) {
             console.warn("DataSchema::parse(): Duplicate field name in schema: " + field.name);
         }
@@ -226,6 +235,9 @@ function parse(fields, data, offset, referenceData) {
                 break;
         }
         //console.log(field.name, String(result[field.name]).substring(0,50));
+    }
+    if (DEBUG) {
+        DEBUGINDENT--;
     }
     return {
         result: result,
